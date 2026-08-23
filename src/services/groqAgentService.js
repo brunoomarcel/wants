@@ -249,10 +249,9 @@ class GroqAgentService {
     const groq = new Groq({ apiKey: groqKey });
 
     const candidateModels = [
-      process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'llama-3.3-70b-specdec',
-      'llama-3.2-11b-vision-instruct'
+      process.env.GROQ_MODEL || 'qwen/qwen3.6-27b',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b'
     ];
     const uniqueModels = [...new Set(candidateModels)];
 
