@@ -1,7 +1,3 @@
-/**
- * Financial Operations and Business Logic Prompt Rules
- */
-module.exports = `
 REGRAS DE NEGÓCIO FINANCEIRO E OPERAÇÕES:
 
 1. REGISTRO DE TRANSAÇÕES (OBRIGATÓRIO: O QUE FOI + VALOR):
@@ -35,4 +31,3 @@ REGRAS DE NEGÓCIO FINANCEIRO E OPERAÇÕES:
 
 8. ENCERRAMENTO E CORDIALIDADE:
    - Se o usuário não demonstrar mais interesse em adicionar nada, ou se despedir (ex: "valeu", "obrigado", "por hoje é só", "tchau"), encerre de forma cordial, amigável e afirme que está sempre à disposição.
-`;
