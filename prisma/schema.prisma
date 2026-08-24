@@ -30,6 +30,7 @@ model Categoria {
   limites    LimiteGasto[]
   transacoes Transacao[]
 
+  @@index([nome])
   @@map("categorias")
 }
 
@@ -44,6 +45,8 @@ model LimiteGasto {
   usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   categoria Categoria @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
 
+  @@unique([usuarioId, categoriaId, mesAno])
+  @@index([usuarioId, mesAno])
   @@map("limites_gastos")
 }
 
@@ -67,5 +70,9 @@ model Transacao {
   transacaoPai   Transacao? @relation("Parcelas", fields: [transacaoPaiId], references: [id], onDelete: SetNull)
   parcelasFilhas Transacao[]@relation("Parcelas")
 
+  @@index([usuarioId, dataTransacao(sort: Desc)])
+  @@index([usuarioId, tipoTransacao])
+  @@index([usuarioId, categoriaId])
+  @@index([transacaoPaiId])
   @@map("transacoes")
 }

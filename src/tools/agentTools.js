@@ -125,10 +125,20 @@ async function executeTool(toolName, args, context) {
 
     case 'listar_transacoes': {
       const trans = await supabaseService.listTransactions(userId, args);
+      const sanitizadas = (trans || []).map(t => ({
+        id: t.id,
+        data: t.data_transacao ? new Date(t.data_transacao).toISOString().split('T')[0] : undefined,
+        descricao: t.descricao,
+        valor: t.valor,
+        tipo: t.tipo_transacao,
+        categoria: t.categoria ? t.categoria.nome : 'Sem categoria',
+        metodo: t.metodo_pagamento,
+        parcela: t.eh_parcelado ? `${t.parcela_atual}/${t.total_parcelas}` : undefined
+      }));
       return {
         status: 'sucesso',
-        total: trans.length,
-        transacoes: trans
+        total: sanitizadas.length,
+        transacoes: sanitizadas
       };
     }
 

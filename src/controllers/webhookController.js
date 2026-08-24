@@ -35,6 +35,9 @@ class WebhookController {
 
       console.log(`✅ [AUTHORIZED USER] Processing request for registered user: ${usuario.nome} (Phone: ${senderPhone}, ID: ${usuario.id})`);
 
+      // Trigger WhatsApp "typing..." presence in background
+      whatsappService.sendPresence(senderPhone, 'composing', instanceToken).catch(() => {});
+
       // 3. Process message exclusively using GROQ Cloud AI Engine (Llama 3.3 70B)
       const agentReply = await groqAgentService.processUserMessage(messageText, usuario);
 

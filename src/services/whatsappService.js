@@ -132,6 +132,37 @@ class WhatsappService {
   }
 
   /**
+   * Sends presence state (e.g. 'composing' / 'recording' / 'available') via Evolution API
+   */
+  async sendPresence(to, presence = 'composing', instanceToken = null) {
+    const { baseUrl, apiKey } = evolutionConfig;
+    const activeKey = instanceToken || apiKey;
+    if (!activeKey) return false;
+
+    const recipient = this.formatPhoneNumber(to);
+    const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+    const endpointUrl = `${cleanBaseUrl}/chat/sendPresence`;
+
+    try {
+      await axios.post(
+        endpointUrl,
+        {
+          number: recipient,
+          presence: presence,
+          delay: 1200
+        },
+        {
+          headers: { 'Content-Type': 'application/json', 'apikey': activeKey },
+          timeout: 3000
+        }
+      );
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
    * Standardized parser for incoming webhooks from Evolution API Go.
    * Extracts sender phone, text message, push name and instance token.
    * Strictly filters out fromMe messages.

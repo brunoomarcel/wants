@@ -33,26 +33,40 @@ class SupabaseService {
     const rawDigits = SupabaseService.cleanPhone(phone);
     if (!rawDigits) return null;
 
+    const possiblePhones = [
+      rawDigits,
+      `+${rawDigits}`,
+      rawDigits.replace(/^55/, ''),
+      `+55${rawDigits.replace(/^55/, '')}`
+    ];
+
     try {
       if (process.env.DATABASE_URL) {
-        const users = await prisma.usuario.findMany();
-        return users.find(u => {
-          const uDigits = SupabaseService.cleanPhone(u.telefone);
-          return uDigits === rawDigits || uDigits.endsWith(rawDigits) || rawDigits.endsWith(uDigits);
-        }) || null;
+        const user = await prisma.usuario.findFirst({
+          where: {
+            telefone: { in: possiblePhones }
+          }
+        });
+        if (user) return user;
       }
     } catch (err) {
       console.warn('Prisma query error, attempting Supabase SDK fallback:', err.message);
     }
 
-    // Fallback to Supabase SDK
-    const { data } = await supabase.from('usuarios').select('*');
-    if (!data) return null;
+    // Fallback to Supabase SDK with filter
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .in('telefone', possiblePhones)
+        .limit(1);
 
-    return data.find(u => {
-      const uDigits = SupabaseService.cleanPhone(u.telefone);
-      return uDigits === rawDigits || uDigits.endsWith(rawDigits) || rawDigits.endsWith(uDigits);
-    }) || null;
+      if (!error && data && data.length > 0) {
+        return data[0];
+      }
+    } catch (e) {}
+
+    return null;
   }
 
   async listUsers() {
@@ -333,43 +347,29 @@ class SupabaseService {
   async setLimit({ usuario_id, categoria_id, valor_limite, mes_ano }) {
     try {
       if (process.env.DATABASE_URL) {
-        const existing = await prisma.limiteGasto.findFirst({
+        const result = await prisma.limiteGasto.upsert({
           where: {
+            usuarioId_categoriaId_mesAno: {
+              usuarioId: usuario_id,
+              categoriaId: categoria_id,
+              mesAno: mes_ano
+            }
+          },
+          update: { valorLimite: valor_limite },
+          create: {
             usuarioId: usuario_id,
             categoriaId: categoria_id,
+            valorLimite: valor_limite,
             mesAno: mes_ano
           }
         });
-
-        if (existing) {
-          const updated = await prisma.limiteGasto.update({
-            where: { id: existing.id },
-            data: { valorLimite: valor_limite }
-          });
-          return {
-            ...updated,
-            usuario_id: updated.usuarioId,
-            categoria_id: updated.categoriaId,
-            valor_limite: parseFloat(updated.valorLimite.toString()),
-            mes_ano: updated.mesAno
-          };
-        } else {
-          const created = await prisma.limiteGasto.create({
-            data: {
-              usuarioId: usuario_id,
-              categoriaId: categoria_id,
-              valorLimite: valor_limite,
-              mesAno: mes_ano
-            }
-          });
-          return {
-            ...created,
-            usuario_id: created.usuarioId,
-            categoria_id: created.categoriaId,
-            valor_limite: parseFloat(created.valorLimite.toString()),
-            mes_ano: created.mesAno
-          };
-        }
+        return {
+          ...result,
+          usuario_id: result.usuarioId,
+          categoria_id: result.categoriaId,
+          valor_limite: parseFloat(result.valorLimite.toString()),
+          mes_ano: result.mesAno
+        };
       }
     } catch (err) {
       console.warn('Prisma error:', err.message);
@@ -427,8 +427,68 @@ class SupabaseService {
     const ehParceladoBool = eh_parcelado || totalParcelasNum > 1;
 
     if (ehParceladoBool && totalParcelasNum > 1) {
-      const valorParcela = (parseFloat(valor) / totalParcelasNum).toFixed(2);
+      const valorParcela = parseFloat((parseFloat(valor) / totalParcelasNum).toFixed(2));
       const dataBase = new Date(data_transacao);
+
+      if (process.env.DATABASE_URL) {
+        try {
+          const result = await prisma.$transaction(async (tx) => {
+            const pai = await tx.transacao.create({
+              data: {
+                usuarioId: usuario_id,
+                categoriaId: categoria_id,
+                descricao: `${descricao} (1/${totalParcelasNum})`,
+                valor: valorParcela,
+                tipoTransacao: tipo_transacao,
+                metodoPagamento: metodo_pagamento,
+                ehParcelado: true,
+                parcelaAtual: 1,
+                totalParcelas: totalParcelasNum,
+                dataTransacao: dataBase
+              },
+              include: { categoria: true }
+            });
+
+            const childrenData = [];
+            for (let i = 2; i <= totalParcelasNum; i++) {
+              const dataProxima = new Date(dataBase);
+              dataProxima.setMonth(dataBase.getMonth() + (i - 1));
+              childrenData.push({
+                usuarioId: usuario_id,
+                categoriaId: categoria_id,
+                descricao: `${descricao} (${i}/${totalParcelasNum})`,
+                valor: valorParcela,
+                tipoTransacao: tipo_transacao,
+                metodoPagamento: metodo_pagamento,
+                ehParcelado: true,
+                parcelaAtual: i,
+                totalParcelas: totalParcelasNum,
+                transacaoPaiId: pai.id,
+                dataTransacao: dataProxima
+              });
+            }
+
+            if (childrenData.length > 0) {
+              await tx.transacao.createMany({ data: childrenData });
+            }
+
+            return pai;
+          });
+
+          return {
+            transacao: {
+              ...result,
+              usuario_id: result.usuarioId,
+              categoria_id: result.categoriaId,
+              valor: parseFloat(result.valor.toString())
+            },
+            mensagem: `Transação parcelada em ${totalParcelasNum}x de R$ ${valorParcela.toFixed(2)} criada com sucesso!`,
+            total_parcelas: totalParcelasNum
+          };
+        } catch (err) {
+          console.warn('Prisma transaction error, falling back:', err.message);
+        }
+      }
 
       // Create main installment (1/N)
       const paiTrans = await this._insertSingleTransaction({
@@ -686,14 +746,93 @@ class SupabaseService {
     }
 
     const formattedMesAno = `${year}-${String(month).padStart(2, '0')}`;
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-    // Safely construct month start and end ISO strings without UTC offset shift
-    const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0)).toISOString();
-    const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)).toISOString();
+    try {
+      if (process.env.DATABASE_URL) {
+        // Native aggregations in PostgreSQL (high speed and no 500-item cutoff)
+        const [totalsByType, expensesByCategory, categories, limites] = await Promise.all([
+          prisma.transacao.groupBy({
+            by: ['tipoTransacao'],
+            where: {
+              usuarioId,
+              dataTransacao: { gte: startOfMonth, lte: endOfMonth }
+            },
+            _sum: { valor: true },
+            _count: { id: true }
+          }),
+          prisma.transacao.groupBy({
+            by: ['categoriaId'],
+            where: {
+              usuarioId,
+              tipoTransacao: 'despesa',
+              dataTransacao: { gte: startOfMonth, lte: endOfMonth }
+            },
+            _sum: { valor: true }
+          }),
+          prisma.categoria.findMany(),
+          this.listLimits(usuarioId, formattedMesAno)
+        ]);
+
+        const catMap = new Map(categories.map(c => [c.id, c.nome]));
+        const porCategoria = {};
+        expensesByCategory.forEach(item => {
+          const nome = catMap.get(item.categoriaId) || 'Sem Categoria';
+          porCategoria[nome] = parseFloat(item._sum.valor ? item._sum.valor.toString() : 0);
+        });
+
+        let totalReceitas = 0;
+        let totalDespesas = 0;
+        let totalEmprestimosTomados = 0;
+        let totalEmprestimosConcedidos = 0;
+        let totalTransacoes = 0;
+
+        totalsByType.forEach(t => {
+          const sumVal = parseFloat(t._sum.valor ? t._sum.valor.toString() : 0);
+          totalTransacoes += t._count.id;
+          if (t.tipoTransacao === 'receita') totalReceitas = sumVal;
+          else if (t.tipoTransacao === 'despesa') totalDespesas = sumVal;
+          else if (t.tipoTransacao === 'emprestimo_tomado') totalEmprestimosTomados = sumVal;
+          else if (t.tipoTransacao === 'emprestimo_concedido') totalEmprestimosConcedidos = sumVal;
+        });
+
+        const statusLimites = (limites || []).map(lim => {
+          const catNome = lim.categoria ? lim.categoria.nome : 'Geral';
+          const gastoAtual = porCategoria[catNome] || 0;
+          const percentual = lim.valor_limite > 0 ? ((gastoAtual / lim.valor_limite) * 100).toFixed(1) : 0;
+          return {
+            categoria: catNome,
+            valor_limite: lim.valor_limite,
+            gasto_atual: gastoAtual,
+            saldo_disponivel: lim.valor_limite - gastoAtual,
+            percentual_usado: `${percentual}%`,
+            excedido: gastoAtual > lim.valor_limite
+          };
+        });
+
+        return {
+          mes_ano: formattedMesAno,
+          total_receitas: totalReceitas,
+          total_despesas: totalDespesas,
+          saldo_liquido: totalReceitas - totalDespesas,
+          total_emprestimos_tomados: totalEmprestimosTomados,
+          total_emprestimos_concedidos: totalEmprestimosConcedidos,
+          gastos_por_categoria: porCategoria,
+          status_limites: statusLimites,
+          total_transacoes: totalTransacoes
+        };
+      }
+    } catch (err) {
+      console.warn('Prisma aggregation error, falling back:', err.message);
+    }
+
+    const startOfMonthISO = startOfMonth.toISOString();
+    const endOfMonthISO = endOfMonth.toISOString();
 
     const transacoes = await this.listTransactions(usuarioId, {
-      data_inicio: startOfMonth,
-      data_fim: endOfMonth,
+      data_inicio: startOfMonthISO,
+      data_fim: endOfMonthISO,
       limit: 500
     });
 
