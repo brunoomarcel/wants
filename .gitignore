@@ -35,3 +35,5 @@ Thumbs.db
 # Temporary / Scratch files
 test-*.js
 check-*.js
+
+agent.md
