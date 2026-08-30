@@ -132,7 +132,7 @@ class WhatsappService {
   }
 
   /**
-   * Sends presence state (e.g. 'composing' / 'recording' / 'available') via Evolution API
+   * Sends presence state (e.g. 'composing' / 'paused') via Evolution API Go
    */
   async sendPresence(to, presence = 'composing', instanceToken = null) {
     const { baseUrl, apiKey } = evolutionConfig;
@@ -141,25 +141,39 @@ class WhatsappService {
 
     const recipient = this.formatPhoneNumber(to);
     const cleanBaseUrl = baseUrl.replace(/\/$/, '');
-    const endpointUrl = `${cleanBaseUrl}/chat/sendPresence`;
+    const endpointUrl = `${cleanBaseUrl}/message/presence`;
 
     try {
-      await axios.post(
+      console.log(`📱 [WhatsApp Presence] Setting state '${presence}' for ${recipient}...`);
+      const response = await axios.post(
         endpointUrl,
         {
           number: recipient,
-          presence: presence,
-          delay: 1200
+          state: presence
         },
         {
           headers: { 'Content-Type': 'application/json', 'apikey': activeKey },
-          timeout: 3000
+          timeout: 4000
         }
       );
-      return true;
+
+      if (response.status === 200 || response.data?.message === 'success') {
+        console.log(`✅ [WhatsApp Presence OK] State '${presence}' set for ${recipient}`);
+        return true;
+      }
+      return false;
     } catch (e) {
+      console.warn(`⚠️ [WhatsApp Presence Error]:`, e.response?.data || e.message);
       return false;
     }
+  }
+
+  /**
+   * Sends 'composing' (digitando...) presence state and pauses execution for specified duration (default 5000ms).
+   */
+  async sendTypingIndicator(to, durationMs = 5000, instanceToken = null) {
+    await this.sendPresence(to, 'composing', instanceToken, durationMs);
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
   }
 
   /**
@@ -234,7 +248,10 @@ class WhatsappService {
     // Always format sender phone with DDI 55
     senderPhone = this.formatPhoneNumber(senderPhone);
 
+    const messageId = body.data?.key?.id || body.key?.id || body.data?.Info?.ID || null;
+
     return {
+      messageId,
       senderPhone,
       messageText,
       pushName,

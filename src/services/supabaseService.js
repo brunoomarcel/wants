@@ -544,16 +544,41 @@ class SupabaseService {
         ehParcelado: false,
         parcelaAtual: 1,
         totalParcelas: 1,
-        dataTransacao: new Date(data_transacao)
+        dataTransacao: this.parseSafeDate(data_transacao)
       });
     }
   }
 
+  parseSafeDate(dateInput) {
+    if (!dateInput) return new Date();
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) return dateInput;
+
+    if (typeof dateInput === 'string') {
+      const str = dateInput.trim();
+      const brMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (brMatch) {
+        const [_, day, month, year] = brMatch;
+        const d = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), 12, 0, 0));
+        if (!isNaN(d.getTime())) return d;
+      }
+      const parsed = new Date(str);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+
+    return new Date();
+  }
+
   async _insertSingleTransaction(data) {
+    const safeDate = this.parseSafeDate(data.dataTransacao);
+    const dataToInsert = {
+      ...data,
+      dataTransacao: safeDate
+    };
+
     try {
       if (process.env.DATABASE_URL) {
         const res = await prisma.transacao.create({
-          data,
+          data: dataToInsert,
           include: { categoria: true }
         });
         return {
@@ -587,7 +612,7 @@ class SupabaseService {
         parcela_atual: data.parcelaAtual,
         total_parcelas: data.totalParcelas,
         transacao_pai_id: data.transacaoPaiId,
-        data_transacao: data.dataTransacao.toISOString()
+        data_transacao: safeDate.toISOString()
       }])
       .select('*, categoria:categorias(id, nome, tipo)')
       .single();

@@ -2,6 +2,8 @@ const supabaseService = require('../services/supabaseService');
 const whatsappService = require('../services/whatsappService');
 const groqAgentService = require('../services/groqAgentService');
 
+const processedMessageIds = new Set();
+
 class WebhookController {
   /**
    * Handles incoming webhooks from Evolution API Go.
@@ -18,7 +20,17 @@ class WebhookController {
         return;
       }
 
-      const { senderPhone, messageText, pushName, instanceToken } = parsed;
+      const { messageId, senderPhone, messageText, pushName, instanceToken } = parsed;
+
+      // Deduplication check: ignore if this exact message event was already processed
+      if (messageId) {
+        if (processedMessageIds.has(messageId)) {
+          console.log(`🛑 [DUPLICATE] Ignored duplicate webhook event for messageId: ${messageId}`);
+          return;
+        }
+        processedMessageIds.add(messageId);
+        setTimeout(() => processedMessageIds.delete(messageId), 60000);
+      }
 
       // 2. SECURITY CHECK: Verify if sender phone exists in Supabase 'usuarios' table BEFORE calling AI
       const usuario = await supabaseService.findUserByPhone(senderPhone);
@@ -35,13 +47,13 @@ class WebhookController {
 
       console.log(`✅ [AUTHORIZED USER] Processing request for registered user: ${usuario.nome} (Phone: ${senderPhone}, ID: ${usuario.id})`);
 
-      // Trigger WhatsApp "typing..." presence in background
+      // 3. Immediately trigger WhatsApp "digitando..." presence when message is received
       whatsappService.sendPresence(senderPhone, 'composing', instanceToken).catch(() => {});
 
-      // 3. Process message exclusively using GROQ Cloud AI Engine (Llama 3.3 70B)
+      // 4. Process message using GROQ Cloud AI Engine (Llama 3.3 70B / Qwen)
       const agentReply = await groqAgentService.processUserMessage(messageText, usuario);
 
-      // 4. Send response back to user via WhatsApp (Evolution API Go)
+      // 5. Send response back to user via WhatsApp as soon as AI completes
       await whatsappService.sendMessage(senderPhone, agentReply, instanceToken);
 
     } catch (error) {

@@ -325,8 +325,9 @@ class GroqAgentService {
                 }
               }
 
-              // Clean any system code, pseudo tags or raw function dumps from user-facing response
+              // Clean any system code, think blocks, pseudo tags or raw function dumps from user-facing response
               finalReply = rawContent
+                .replace(/<think>[\s\S]*?<\/think>/gs, '')
                 .replace(/<function=.*?>.*?<\/function>/gs, '')
                 .replace(/<function=.*?>/gs, '')
                 .replace(/\d+\.\s+\w+:[\s\S]*/g, '')

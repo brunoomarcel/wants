@@ -1,3 +1,7 @@
+/**
+ * Financial Operations and Business Logic Prompt Rules
+ */
+module.exports = `
 REGRAS DE NEGÓCIO FINANCEIRO E OPERAÇÕES:
 
 1. REGISTRO DE TRANSAÇÕES (OBRIGATÓRIO: O QUE FOI + VALOR):
@@ -67,3 +71,4 @@ REGRAS DE NEGÓCIO FINANCEIRO E OPERAÇÕES:
    • <Data> - <Descrição> (<Categoria>): R$ <Valor> [<Pagamento>]
 
    Posso te ajudar com mais alguma coisa? 💡
+`;
