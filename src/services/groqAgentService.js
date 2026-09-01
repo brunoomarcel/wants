@@ -28,6 +28,7 @@ const groqTools = [
             description: 'Forma de pagamento utilizada.'
           },
           categoria_nome: { type: 'string', description: 'Nome da categoria (ex: Alimentação, Transporte, Moradia, Lazer, Salário).' },
+          cartao_nome: { type: 'string', description: 'Nome do cartão de crédito utilizado (ex: Nubank, Itaú, Inter, C6).' },
           eh_parcelado: { type: 'boolean', description: 'Se true, indica que a compra é parcelada.' },
           total_parcelas: { type: 'integer', description: 'Quantidade total de parcelas (ex: 3, 10, 12).' },
           data_transacao: { type: 'string', description: 'Data da transação no formato ISO ou YYYY-MM-DD.' }
@@ -227,6 +228,74 @@ const groqTools = [
           }
         },
         required: ['transacoes']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cadastrar_cartao_credito',
+      description: 'Cadastra um novo cartão de crédito para o usuário com dias de fechamento e vencimento de fatura.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nome: { type: 'string', description: 'Nome do cartão (ex: Nubank, Itaú Black, Inter).' },
+          dia_fechamento: { type: 'integer', description: 'Dia do mês em que a fatura fecha (1-31, ex: 20).' },
+          dia_vencimento: { type: 'integer', description: 'Dia do mês em que a fatura vence (1-31, ex: 28).' },
+          limite: { type: 'number', description: 'Limite de crédito total do cartão em Reais (opcional).' },
+          ultimos_digitos: { type: 'string', description: 'Últimos 4 dígitos do cartão (opcional).' }
+        },
+        required: ['nome', 'dia_fechamento', 'dia_vencimento']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listar_cartoes_credito',
+      description: 'Lista todos os cartões de crédito cadastrados do usuário com suas datas de fechamento e vencimento.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'deletar_cartao_credito',
+      description: 'Exclui um cartão de crédito cadastrado pelo ID ou nome.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cartao_id: { type: 'string', description: 'UUID do cartão.' },
+          nome: { type: 'string', description: 'Nome do cartão (ex: Nubank).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_fatura_cartao',
+      description: 'Consulta o valor total e o detalhamento da fatura de um determinado mês para um ou todos os cartões de crédito.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cartao_nome: { type: 'string', description: 'Nome do cartão (opcional, ex: Nubank).' },
+          mes_fatura: { type: 'string', description: 'Mês da fatura no formato YYYY-MM (ex: 2026-09). Se não informado, busca do mês atual.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'consultar_melhor_cartao',
+      description: 'Indica ao usuário qual é o melhor cartão de crédito para comprar hoje para ganhar o maior prazo até o pagamento da fatura.',
+      parameters: {
+        type: 'object',
+        properties: {}
       }
     }
   }

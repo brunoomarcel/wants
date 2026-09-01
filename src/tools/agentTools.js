@@ -1,4 +1,5 @@
 const supabaseService = require('../services/supabaseService');
+const CreditCardService = require('../services/creditCardService');
 
 /**
  * Tool Definitions and Executors for Agent Function Calling
@@ -37,13 +38,16 @@ async function executeTool(toolName, args, context) {
         tipoFinal = 'receita';
       }
 
+      const metodoFinal = args.metodo_pagamento || (args.cartao_nome ? 'cartao_credito' : 'pix');
+
       const res = await supabaseService.createTransaction({
         usuario_id: userId,
         descricao: args.descricao,
         valor: valNum,
         tipo_transacao: tipoFinal,
-        metodo_pagamento: args.metodo_pagamento || 'pix',
+        metodo_pagamento: metodoFinal,
         categoria_nome: args.categoria_nome || (tipoFinal === 'receita' ? 'Salário' : 'Outros'),
+        cartao_nome: args.cartao_nome || null,
         eh_parcelado: args.eh_parcelado || false,
         total_parcelas: args.total_parcelas || 1,
         data_transacao: args.data_transacao || new Date().toISOString()
@@ -268,6 +272,84 @@ async function executeTool(toolName, args, context) {
         status: 'sucesso',
         mensagem: 'Categoria excluída com sucesso.',
         resultado: res
+      };
+    }
+
+    case 'cadastrar_cartao_credito': {
+      if (!args.nome) {
+        return { status: 'erro', mensagem: 'O nome do cartão (ex: Nubank, Itaú) é obrigatório.' };
+      }
+      if (!args.dia_fechamento || !args.dia_vencimento) {
+        return { status: 'erro', mensagem: 'O dia de fechamento e o dia de vencimento da fatura são obrigatórios.' };
+      }
+
+      const res = await supabaseService.createCreditCard({
+        usuario_id: userId,
+        nome: args.nome,
+        ultimos_digitos: args.ultimos_digitos || null,
+        limite: args.limite || 0,
+        dia_fechamento: args.dia_fechamento,
+        dia_vencimento: args.dia_vencimento
+      });
+
+      return {
+        status: 'sucesso',
+        mensagem: `Cartão ${res.nome} cadastrado com sucesso! (Fechamento: dia ${res.dia_fechamento}, Vencimento: dia ${res.dia_vencimento})`,
+        cartao: res
+      };
+    }
+
+    case 'listar_cartoes_credito': {
+      const cards = await supabaseService.listCreditCards(userId);
+      return {
+        status: 'sucesso',
+        total: cards.length,
+        cartoes: cards
+      };
+    }
+
+    case 'deletar_cartao_credito': {
+      let cardId = args.cartao_id;
+      if (!cardId && args.nome) {
+        const found = await supabaseService.findCreditCardByName(userId, args.nome);
+        if (found) cardId = found.id;
+      }
+      if (!cardId) {
+        return { status: 'erro', mensagem: 'Cartão não encontrado para exclusão.' };
+      }
+
+      await supabaseService.deleteCreditCard(cardId);
+      return {
+        status: 'sucesso',
+        mensagem: 'Cartão de crédito removido com sucesso.'
+      };
+    }
+
+    case 'consultar_fatura_cartao': {
+      const fatura = await supabaseService.getInvoiceSummary(userId, args.cartao_nome, args.mes_fatura);
+      return {
+        status: 'sucesso',
+        dados: fatura
+      };
+    }
+
+    case 'consultar_melhor_cartao': {
+      const cards = await supabaseService.listCreditCards(userId);
+      if (!cards || cards.length === 0) {
+        return {
+          status: 'aviso',
+          mensagem: 'Você ainda não possui cartões de crédito cadastrados. Deseja cadastrar seu cartão informando o nome, dia de fechamento e dia de vencimento?'
+        };
+      }
+
+      const best = CreditCardService.findBestCardToBuy(cards, new Date());
+      return {
+        status: 'sucesso',
+        melhor_cartao: best ? best.cartao.nome : cards[0].nome,
+        dias_ate_vencimento: best ? best.dias_ate_vencimento : null,
+        dia_fechamento: best ? best.dia_fechamento : null,
+        dia_vencimento: best ? best.dia_vencimento : null,
+        detalhes: best
       };
     }
 

@@ -18,8 +18,26 @@ model Usuario {
   createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz
   limites    LimiteGasto[]
   transacoes Transacao[]
+  cartoes    CartaoCredito[]
 
   @@map("usuarios")
+}
+
+model CartaoCredito {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId      String      @map("usuario_id") @db.Uuid
+  nome           String      @db.VarChar
+  ultimosDigitos String?     @map("ultimos_digitos") @db.VarChar(4)
+  limite         Decimal?    @default(0) @db.Decimal
+  diaFechamento  Int         @map("dia_fechamento")
+  diaVencimento  Int         @map("dia_vencimento")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  usuario        Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  transacoes     Transacao[]
+
+  @@unique([usuarioId, nome])
+  @@index([usuarioId])
+  @@map("cartoes_credito")
 }
 
 model Categoria {
@@ -51,28 +69,33 @@ model LimiteGasto {
 }
 
 model Transacao {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  usuarioId       String      @map("usuario_id") @db.Uuid
-  categoriaId     String?     @map("categoria_id") @db.Uuid
-  descricao       String      @db.Text
-  valor           Decimal     @db.Decimal
-  tipoTransacao   String      @map("tipo_transacao") @db.VarChar
-  metodoPagamento String      @map("metodo_pagamento") @db.VarChar
-  ehParcelado     Boolean     @default(false) @map("eh_parcelado")
-  parcelaAtual    Int         @default(1) @map("parcela_atual")
-  totalParcelas   Int         @default(1) @map("total_parcelas")
-  transacaoPaiId  String?     @map("transacao_pai_id") @db.Uuid
-  dataTransacao   DateTime    @default(now()) @map("data_transacao") @db.Timestamptz
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId       String         @map("usuario_id") @db.Uuid
+  categoriaId     String?        @map("categoria_id") @db.Uuid
+  cartaoId        String?        @map("cartao_id") @db.Uuid
+  descricao       String         @db.Text
+  valor           Decimal        @db.Decimal
+  tipoTransacao   String         @map("tipo_transacao") @db.VarChar
+  metodoPagamento String         @map("metodo_pagamento") @db.VarChar
+  ehParcelado     Boolean        @default(false) @map("eh_parcelado")
+  parcelaAtual    Int            @default(1) @map("parcela_atual")
+  totalParcelas   Int            @default(1) @map("total_parcelas")
+  transacaoPaiId  String?        @map("transacao_pai_id") @db.Uuid
+  mesFatura       String?        @map("mes_fatura") @db.VarChar
+  dataTransacao   DateTime       @default(now()) @map("data_transacao") @db.Timestamptz
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
 
-  usuario        Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  categoria      Categoria? @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
-  transacaoPai   Transacao? @relation("Parcelas", fields: [transacaoPaiId], references: [id], onDelete: SetNull)
-  parcelasFilhas Transacao[]@relation("Parcelas")
+  usuario        Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  categoria      Categoria?     @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  cartao         CartaoCredito? @relation(fields: [cartaoId], references: [id], onDelete: SetNull)
+  transacaoPai   Transacao?     @relation("Parcelas", fields: [transacaoPaiId], references: [id], onDelete: SetNull)
+  parcelasFilhas Transacao[]    @relation("Parcelas")
 
   @@index([usuarioId, dataTransacao(sort: Desc)])
   @@index([usuarioId, tipoTransacao])
   @@index([usuarioId, categoriaId])
+  @@index([usuarioId, cartaoId])
+  @@index([usuarioId, mesFatura])
   @@index([transacaoPaiId])
   @@map("transacoes")
 }

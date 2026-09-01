@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const supabase = require('../config/supabase');
+const CreditCardService = require('./creditCardService');
 
 /**
  * Service to handle database operations for:
@@ -402,6 +403,270 @@ class SupabaseService {
   }
 
   // ==========================================
+  // CARTÕES DE CRÉDITO
+  // ==========================================
+
+  async listCreditCards(usuarioId) {
+    try {
+      if (process.env.DATABASE_URL) {
+        const cards = await prisma.cartaoCredito.findMany({
+          where: { usuarioId },
+          orderBy: { nome: 'asc' }
+        });
+        return cards.map(c => ({
+          ...c,
+          usuario_id: c.usuarioId,
+          ultimos_digitos: c.ultimosDigitos,
+          limite: c.limite ? parseFloat(c.limite.toString()) : 0,
+          dia_fechamento: c.diaFechamento,
+          dia_vencimento: c.diaVencimento
+        }));
+      }
+    } catch (err) {
+      console.warn('Prisma error in listCreditCards, falling back:', err.message);
+    }
+
+    const { data, error } = await supabase
+      .from('cartoes_credito')
+      .select('*')
+      .eq('usuario_id', usuarioId)
+      .order('nome');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async findCreditCardByName(usuarioId, nome) {
+    if (!nome) return null;
+    const cleanName = String(nome).trim();
+
+    try {
+      if (process.env.DATABASE_URL) {
+        const card = await prisma.cartaoCredito.findFirst({
+          where: {
+            usuarioId,
+            OR: [
+              { nome: { contains: cleanName, mode: 'insensitive' } },
+              { ultimosDigitos: { contains: cleanName } }
+            ]
+          }
+        });
+        if (card) {
+          return {
+            ...card,
+            usuario_id: card.usuarioId,
+            ultimos_digitos: card.ultimosDigitos,
+            limite: card.limite ? parseFloat(card.limite.toString()) : 0,
+            dia_fechamento: card.diaFechamento,
+            dia_vencimento: card.diaVencimento
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Prisma error in findCreditCardByName:', err.message);
+    }
+
+    const { data } = await supabase
+      .from('cartoes_credito')
+      .select('*')
+      .eq('usuario_id', usuarioId)
+      .ilike('nome', `%${cleanName}%`)
+      .limit(1);
+
+    return data && data.length > 0 ? data[0] : null;
+  }
+
+  async createCreditCard({ usuario_id, nome, ultimos_digitos = null, limite = 0, dia_fechamento, dia_vencimento }) {
+    const diaFechamentoNum = parseInt(dia_fechamento, 10);
+    const diaVencimentoNum = parseInt(dia_vencimento, 10);
+    const limiteNum = parseFloat(limite) || 0;
+
+    if (isNaN(diaFechamentoNum) || diaFechamentoNum < 1 || diaFechamentoNum > 31) {
+      throw new Error('Dia de fechamento inválido (deve ser entre 1 e 31).');
+    }
+    if (isNaN(diaVencimentoNum) || diaVencimentoNum < 1 || diaVencimentoNum > 31) {
+      throw new Error('Dia de vencimento inválido (deve ser entre 1 e 31).');
+    }
+
+    try {
+      if (process.env.DATABASE_URL) {
+        const res = await prisma.cartaoCredito.create({
+          data: {
+            usuarioId: usuario_id,
+            nome,
+            ultimosDigitos: ultimos_digitos,
+            limite: limiteNum,
+            diaFechamento: diaFechamentoNum,
+            diaVencimento: diaVencimentoNum
+          }
+        });
+        return {
+          ...res,
+          usuario_id: res.usuarioId,
+          ultimos_digitos: res.ultimosDigitos,
+          limite: parseFloat(res.limite.toString()),
+          dia_fechamento: res.diaFechamento,
+          dia_vencimento: res.diaVencimento
+        };
+      }
+    } catch (err) {
+      console.warn('Prisma error in createCreditCard:', err.message);
+    }
+
+    const { data, error } = await supabase
+      .from('cartoes_credito')
+      .insert([{
+        usuario_id,
+        nome,
+        ultimos_digitos,
+        limite: limiteNum,
+        dia_fechamento: diaFechamentoNum,
+        dia_vencimento: diaVencimentoNum
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async updateCreditCard(id, updates) {
+    const dataToUpdate = {};
+    if (updates.nome) dataToUpdate.nome = updates.nome;
+    if (updates.ultimos_digitos !== undefined) dataToUpdate.ultimosDigitos = updates.ultimos_digitos;
+    if (updates.limite !== undefined) dataToUpdate.limite = parseFloat(updates.limite);
+    if (updates.dia_fechamento !== undefined) dataToUpdate.diaFechamento = parseInt(updates.dia_fechamento, 10);
+    if (updates.dia_vencimento !== undefined) dataToUpdate.diaVencimento = parseInt(updates.dia_vencimento, 10);
+
+    try {
+      if (process.env.DATABASE_URL) {
+        const res = await prisma.cartaoCredito.update({
+          where: { id },
+          data: dataToUpdate
+        });
+        return {
+          ...res,
+          usuario_id: res.usuarioId,
+          ultimos_digitos: res.ultimosDigitos,
+          limite: parseFloat(res.limite.toString()),
+          dia_fechamento: res.diaFechamento,
+          dia_vencimento: res.diaVencimento
+        };
+      }
+    } catch (err) {
+      console.warn('Prisma error in updateCreditCard:', err.message);
+    }
+
+    const { data, error } = await supabase.from('cartoes_credito').update(updates).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteCreditCard(id) {
+    try {
+      if (process.env.DATABASE_URL) {
+        return await prisma.cartaoCredito.delete({ where: { id } });
+      }
+    } catch (err) {
+      console.warn('Prisma error in deleteCreditCard:', err.message);
+    }
+
+    const { data, error } = await supabase.from('cartoes_credito').delete().eq('id', id).select();
+    if (error) throw error;
+    return data;
+  }
+
+  async getInvoiceSummary(usuarioId, cartaoNome = null, mesFatura = null) {
+    const now = new Date();
+    const formattedMesFatura = mesFatura || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    let targetCard = null;
+    if (cartaoNome) {
+      targetCard = await this.findCreditCardByName(usuarioId, cartaoNome);
+    }
+
+    try {
+      if (process.env.DATABASE_URL) {
+        const where = {
+          usuarioId,
+          tipoTransacao: 'despesa',
+          OR: [
+            { mesFatura: formattedMesFatura },
+            {
+              mesFatura: null,
+              metodoPagamento: 'cartao_credito'
+            }
+          ]
+        };
+
+        if (targetCard) {
+          where.cartaoId = targetCard.id;
+        }
+
+        const transacoes = await prisma.transacao.findMany({
+          where,
+          include: { categoria: true, cartao: true },
+          orderBy: { dataTransacao: 'asc' }
+        });
+
+        const totalFatura = transacoes.reduce((acc, t) => acc + parseFloat(t.valor.toString()), 0);
+
+        return {
+          mes_fatura: formattedMesFatura,
+          cartao: targetCard ? targetCard.nome : 'Todos os Cartões',
+          dia_fechamento: targetCard ? targetCard.diaFechamento : null,
+          dia_vencimento: targetCard ? targetCard.diaVencimento : null,
+          total_fatura: totalFatura,
+          quantidade_itens: transacoes.length,
+          itens: transacoes.map(t => ({
+            id: t.id,
+            descricao: t.descricao,
+            valor: parseFloat(t.valor.toString()),
+            categoria: t.categoria ? t.categoria.nome : 'Geral',
+            cartao: t.cartao ? t.cartao.nome : 'Cartão',
+            parcela: t.ehParcelado ? `${t.parcelaAtual}/${t.totalParcelas}` : 'À vista',
+            data: t.dataTransacao.toISOString().split('T')[0]
+          }))
+        };
+      }
+    } catch (err) {
+      console.warn('Prisma error in getInvoiceSummary, falling back:', err.message);
+    }
+
+    let query = supabase
+      .from('transacoes')
+      .select('*, categoria:categorias(id, nome), cartao:cartoes_credito(id, nome)')
+      .eq('usuario_id', usuarioId)
+      .eq('tipo_transacao', 'despesa')
+      .eq('mes_fatura', formattedMesFatura);
+
+    if (targetCard) {
+      query = query.eq('cartao_id', targetCard.id);
+    }
+
+    const { data: transacoes, error } = await query;
+    if (error) throw error;
+
+    const list = transacoes || [];
+    const totalFatura = list.reduce((acc, t) => acc + parseFloat(t.valor || 0), 0);
+
+    return {
+      mes_fatura: formattedMesFatura,
+      cartao: targetCard ? targetCard.nome : 'Todos os Cartões',
+      total_fatura: totalFatura,
+      quantidade_itens: list.length,
+      itens: list.map(t => ({
+        id: t.id,
+        descricao: t.descricao,
+        valor: parseFloat(t.valor || 0),
+        categoria: t.categoria ? t.categoria.nome : 'Geral',
+        cartao: t.cartao ? t.cartao.nome : 'Cartão',
+        parcela: t.eh_parcelado ? `${t.parcela_atual}/${t.total_parcelas}` : 'À vista',
+        data: t.data_transacao ? t.data_transacao.split('T')[0] : null
+      }))
+    };
+  }
+
+  // ==========================================
   // TRANSAÇÕES
   // ==========================================
 
@@ -409,6 +674,9 @@ class SupabaseService {
     usuario_id,
     categoria_id = null,
     categoria_nome = null,
+    cartao_id = null,
+    cartao_nome = null,
+    mes_fatura = null,
     descricao,
     valor,
     tipo_transacao = 'despesa',
@@ -423,12 +691,34 @@ class SupabaseService {
       if (cat) categoria_id = cat.id;
     }
 
+    // Identifica se é cartão de crédito e busca o cartão correspondente
+    let resolvedCard = null;
+    if (cartao_nome || cartao_id || metodo_pagamento === 'cartao_credito') {
+      metodo_pagamento = 'cartao_credito';
+      if (cartao_nome) {
+        resolvedCard = await this.findCreditCardByName(usuario_id, cartao_nome);
+      } else if (cartao_id) {
+        const cards = await this.listCreditCards(usuario_id);
+        resolvedCard = cards.find(c => c.id === cartao_id);
+      } else {
+        const cards = await this.listCreditCards(usuario_id);
+        if (cards && cards.length === 1) {
+          resolvedCard = cards[0];
+        }
+      }
+      if (resolvedCard) {
+        cartao_id = resolvedCard.id;
+      }
+    }
+
     const totalParcelasNum = parseInt(total_parcelas, 10) || 1;
     const ehParceladoBool = eh_parcelado || totalParcelasNum > 1;
+    const safeBaseDate = this.parseSafeDate(data_transacao);
 
     if (ehParceladoBool && totalParcelasNum > 1) {
       const valorParcela = parseFloat((parseFloat(valor) / totalParcelasNum).toFixed(2));
-      const dataBase = new Date(data_transacao);
+      const closingDay = resolvedCard ? (resolvedCard.diaFechamento || resolvedCard.dia_fechamento) : 31;
+      const firstInvoiceMonth = mes_fatura || (resolvedCard ? CreditCardService.getInvoiceMonth(safeBaseDate, closingDay, 0) : null);
 
       if (process.env.DATABASE_URL) {
         try {
@@ -437,6 +727,7 @@ class SupabaseService {
               data: {
                 usuarioId: usuario_id,
                 categoriaId: categoria_id,
+                cartaoId: cartao_id,
                 descricao: `${descricao} (1/${totalParcelasNum})`,
                 valor: valorParcela,
                 tipoTransacao: tipo_transacao,
@@ -444,18 +735,22 @@ class SupabaseService {
                 ehParcelado: true,
                 parcelaAtual: 1,
                 totalParcelas: totalParcelasNum,
-                dataTransacao: dataBase
+                mesFatura: firstInvoiceMonth,
+                dataTransacao: safeBaseDate
               },
-              include: { categoria: true }
+              include: { categoria: true, cartao: true }
             });
 
             const childrenData = [];
             for (let i = 2; i <= totalParcelasNum; i++) {
-              const dataProxima = new Date(dataBase);
-              dataProxima.setMonth(dataBase.getMonth() + (i - 1));
+              const dataProxima = new Date(safeBaseDate);
+              dataProxima.setMonth(safeBaseDate.getMonth() + (i - 1));
+              const childInvoiceMonth = resolvedCard ? CreditCardService.getInvoiceMonth(safeBaseDate, closingDay, i - 1) : null;
+
               childrenData.push({
                 usuarioId: usuario_id,
                 categoriaId: categoria_id,
+                cartaoId: cartao_id,
                 descricao: `${descricao} (${i}/${totalParcelasNum})`,
                 valor: valorParcela,
                 tipoTransacao: tipo_transacao,
@@ -464,6 +759,7 @@ class SupabaseService {
                 parcelaAtual: i,
                 totalParcelas: totalParcelasNum,
                 transacaoPaiId: pai.id,
+                mesFatura: childInvoiceMonth,
                 dataTransacao: dataProxima
               });
             }
@@ -480,9 +776,12 @@ class SupabaseService {
               ...result,
               usuario_id: result.usuarioId,
               categoria_id: result.categoriaId,
+              cartao_id: result.cartaoId,
+              cartao_nome: resolvedCard ? resolvedCard.nome : undefined,
+              mes_fatura: firstInvoiceMonth,
               valor: parseFloat(result.valor.toString())
             },
-            mensagem: `Transação parcelada em ${totalParcelasNum}x de R$ ${valorParcela.toFixed(2)} criada com sucesso!`,
+            mensagem: `Transação parcelada em ${totalParcelasNum}x de R$ ${valorParcela.toFixed(2)} criada com sucesso!${firstInvoiceMonth ? ` (1ª parcela na fatura ${firstInvoiceMonth})` : ''}`,
             total_parcelas: totalParcelasNum
           };
         } catch (err) {
@@ -490,10 +789,11 @@ class SupabaseService {
         }
       }
 
-      // Create main installment (1/N)
+      // Supabase fallback
       const paiTrans = await this._insertSingleTransaction({
         usuarioId: usuario_id,
         categoriaId: categoria_id,
+        cartaoId: cartao_id,
         descricao: `${descricao} (1/${totalParcelasNum})`,
         valor: parseFloat(valorParcela),
         tipoTransacao: tipo_transacao,
@@ -501,18 +801,21 @@ class SupabaseService {
         ehParcelado: true,
         parcelaAtual: 1,
         totalParcelas: totalParcelasNum,
-        dataTransacao: dataBase
+        mesFatura: firstInvoiceMonth,
+        dataTransacao: safeBaseDate
       });
 
       const parcelasCriadas = [paiTrans];
 
       for (let i = 2; i <= totalParcelasNum; i++) {
-        const dataProxima = new Date(dataBase);
-        dataProxima.setMonth(dataBase.getMonth() + (i - 1));
+        const dataProxima = new Date(safeBaseDate);
+        dataProxima.setMonth(safeBaseDate.getMonth() + (i - 1));
+        const childInvoiceMonth = resolvedCard ? CreditCardService.getInvoiceMonth(safeBaseDate, closingDay, i - 1) : null;
 
         const childTrans = await this._insertSingleTransaction({
           usuarioId: usuario_id,
           categoriaId: categoria_id,
+          cartaoId: cartao_id,
           descricao: `${descricao} (${i}/${totalParcelasNum})`,
           valor: parseFloat(valorParcela),
           tipoTransacao: tipo_transacao,
@@ -521,6 +824,7 @@ class SupabaseService {
           parcelaAtual: i,
           totalParcelas: totalParcelasNum,
           transacaoPaiId: paiTrans.id,
+          mesFatura: childInvoiceMonth,
           dataTransacao: dataProxima
         });
 
@@ -534,9 +838,13 @@ class SupabaseService {
         parcelas: parcelasCriadas
       };
     } else {
+      const closingDay = resolvedCard ? (resolvedCard.diaFechamento || resolvedCard.dia_fechamento) : 31;
+      const singleInvoiceMonth = mes_fatura || (resolvedCard ? CreditCardService.getInvoiceMonth(safeBaseDate, closingDay, 0) : null);
+
       return await this._insertSingleTransaction({
         usuarioId: usuario_id,
         categoriaId: categoria_id,
+        cartaoId: cartao_id,
         descricao,
         valor: parseFloat(valor),
         tipoTransacao: tipo_transacao,
@@ -544,7 +852,8 @@ class SupabaseService {
         ehParcelado: false,
         parcelaAtual: 1,
         totalParcelas: 1,
-        dataTransacao: this.parseSafeDate(data_transacao)
+        mesFatura: singleInvoiceMonth,
+        dataTransacao: safeBaseDate
       });
     }
   }
@@ -579,12 +888,15 @@ class SupabaseService {
       if (process.env.DATABASE_URL) {
         const res = await prisma.transacao.create({
           data: dataToInsert,
-          include: { categoria: true }
+          include: { categoria: true, cartao: true }
         });
         return {
           ...res,
           usuario_id: res.usuarioId,
           categoria_id: res.categoriaId,
+          cartao_id: res.cartaoId,
+          cartao_nome: res.cartao ? res.cartao.nome : undefined,
+          mes_fatura: res.mesFatura,
           tipo_transacao: res.tipoTransacao,
           metodo_pagamento: res.metodoPagamento,
           eh_parcelado: res.ehParcelado,
@@ -604,6 +916,8 @@ class SupabaseService {
       .insert([{
         usuario_id: data.usuarioId,
         categoria_id: data.categoriaId,
+        cartao_id: data.cartaoId,
+        mes_fatura: data.mesFatura,
         descricao: data.descricao,
         valor: data.valor,
         tipo_transacao: data.tipoTransacao,
@@ -614,7 +928,7 @@ class SupabaseService {
         transacao_pai_id: data.transacaoPaiId,
         data_transacao: safeDate.toISOString()
       }])
-      .select('*, categoria:categorias(id, nome, tipo)')
+      .select('*, categoria:categorias(id, nome, tipo), cartao:cartoes_credito(id, nome)')
       .single();
 
     if (error) throw error;
@@ -622,13 +936,15 @@ class SupabaseService {
   }
 
   async listTransactions(usuarioId, options = {}) {
-    const { limit = 50, data_inicio, data_fim, tipo_transacao, categoria_id } = options;
+    const { limit = 50, data_inicio, data_fim, tipo_transacao, categoria_id, cartao_id, mes_fatura } = options;
 
     try {
       if (process.env.DATABASE_URL) {
         const where = { usuarioId };
         if (tipo_transacao) where.tipoTransacao = tipo_transacao;
         if (categoria_id) where.categoriaId = categoria_id;
+        if (cartao_id) where.cartaoId = cartao_id;
+        if (mes_fatura) where.mesFatura = mes_fatura;
         if (data_inicio || data_fim) {
           where.dataTransacao = {};
           if (data_inicio) where.dataTransacao.gte = new Date(data_inicio);
@@ -639,13 +955,16 @@ class SupabaseService {
           where,
           take: limit ? parseInt(limit, 10) : 50,
           orderBy: { dataTransacao: 'desc' },
-          include: { categoria: true }
+          include: { categoria: true, cartao: true }
         });
 
         return res.map(t => ({
           ...t,
           usuario_id: t.usuarioId,
           categoria_id: t.categoriaId,
+          cartao_id: t.cartaoId,
+          cartao_nome: t.cartao ? t.cartao.nome : undefined,
+          mes_fatura: t.mesFatura,
           tipo_transacao: t.tipoTransacao,
           metodo_pagamento: t.metodoPagamento,
           eh_parcelado: t.ehParcelado,
@@ -660,10 +979,12 @@ class SupabaseService {
       console.warn('Prisma error:', err.message);
     }
 
-    let query = supabase.from('transacoes').select('*, categoria:categorias(id, nome, tipo)').eq('usuario_id', usuarioId).order('data_transacao', { ascending: false });
+    let query = supabase.from('transacoes').select('*, categoria:categorias(id, nome, tipo), cartao:cartoes_credito(id, nome)').eq('usuario_id', usuarioId).order('data_transacao', { ascending: false });
     if (limit) query = query.limit(limit);
     if (tipo_transacao) query = query.eq('tipo_transacao', tipo_transacao);
     if (categoria_id) query = query.eq('categoria_id', categoria_id);
+    if (cartao_id) query = query.eq('cartao_id', cartao_id);
+    if (mes_fatura) query = query.eq('mes_fatura', mes_fatura);
     if (data_inicio) query = query.gte('data_transacao', data_inicio);
     if (data_fim) query = query.lte('data_transacao', data_fim);
 
