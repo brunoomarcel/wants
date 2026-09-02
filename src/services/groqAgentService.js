@@ -318,11 +318,10 @@ class GroqAgentService {
     const groq = new Groq({ apiKey: groqKey });
 
     const candidateModels = [
-      process.env.GROQ_MODEL || 'qwen/qwen3.6-27b',
-      'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b'
+      process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant'
     ];
-    const uniqueModels = [...new Set(candidateModels)];
+    const uniqueModels = [...new Set(candidateModels.filter(Boolean))];
 
     const recentHistory = memoryService.getHistory(usuario.id);
     const hasHistory = recentHistory.length > 0;
@@ -332,13 +331,8 @@ class GroqAgentService {
     let lastError = null;
 
     for (const modelId of uniqueModels) {
-      let attempts = 0;
-      const maxAttempts = 2;
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          console.log(`🚀 [GROQ AI] Processing message for ${usuario.nome} with model: ${modelId} (attempt ${attempts})`);
+      try {
+        console.log(`🚀 [GROQ AI] Processing message for ${usuario.nome} with model: ${modelId}`);
 
           const messages = [
             { role: 'system', content: systemPrompt },
@@ -461,18 +455,10 @@ class GroqAgentService {
 
           return finalReply;
 
-        } catch (err) {
-          lastError = err;
-          const status = err.status || err.statusCode;
-          console.warn(`⚠️ GROQ model ${modelId} failed on attempt ${attempts} (${status || err.message}).`);
-
-          if ((status === 429 || (err.message && err.message.includes('429'))) && attempts < maxAttempts) {
-            console.warn(`⏳ Rate limit (429) on GROQ ${modelId}. Waiting 2.5s before retry...`);
-            await this.sleep(2500);
-            continue;
-          }
-          break; // Move to next model if non-429 or max attempts reached for this model
-        }
+      } catch (err) {
+        lastError = err;
+        const status = err.status || err.statusCode;
+        console.warn(`⚠️ GROQ model ${modelId} failed (${status || err.message}). Switching to next fallback model...`);
       }
     }
 
