@@ -342,6 +342,8 @@ class GroqAgentService {
 
           let iterations = 0;
           const executedToolSignatures = new Set();
+          let executedAnyTool = false;
+          let lastToolResult = null;
           let finalReply = '';
 
           while (iterations < 5) {
@@ -377,6 +379,8 @@ class GroqAgentService {
                 console.log(`⚡ [GROQ Pseudo Tool Intercept] Executing ${fnName} with args:`, fnArgs);
                 try {
                   const toolResult = await executeTool(fnName, fnArgs, { usuario });
+                  executedAnyTool = true;
+                  lastToolResult = toolResult;
                   messages.push({
                     role: 'tool',
                     tool_call_id: `pseudo_${Date.now()}`,
@@ -398,7 +402,11 @@ class GroqAgentService {
                 .trim();
 
               if (!finalReply) {
-                finalReply = 'Operação realizada com sucesso.';
+                if (executedAnyTool && lastToolResult?.mensagem) {
+                  finalReply = lastToolResult.mensagem;
+                } else if (!executedAnyTool) {
+                  finalReply = 'Não consegui entender ou localizar o registro solicitado. Como posso te ajudar? 💡';
+                }
               }
               break;
             }
@@ -428,6 +436,8 @@ class GroqAgentService {
               try {
                 const toolResult = await executeTool(functionName, args, { usuario });
                 executedToolSignatures.add(signature);
+                executedAnyTool = true;
+                lastToolResult = toolResult;
 
                 messages.push({
                   role: 'tool',
@@ -446,7 +456,11 @@ class GroqAgentService {
           }
 
           if (!finalReply) {
-            finalReply = 'Operação concluída com sucesso.';
+            if (executedAnyTool && lastToolResult?.mensagem) {
+              finalReply = lastToolResult.mensagem;
+            } else {
+              finalReply = 'Como posso te ajudar com suas finanças hoje? 💡';
+            }
           }
 
           // Save interaction to memory service

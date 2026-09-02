@@ -228,20 +228,50 @@ async function executeTool(toolName, args, context) {
     }
 
     case 'atualizar_transacao': {
+      let targetId = args.transacao_id;
+
+      if (!targetId) {
+        // Busca transação recente do usuário para identificar qual atualizar
+        const recent = await supabaseService.listTransactions(userId, { limit: 10 });
+        if (args.descricao) {
+          const match = recent.find(t => (t.descricao || '').toLowerCase().includes(args.descricao.toLowerCase()));
+          if (match) targetId = match.id;
+        }
+        if (!targetId && recent.length > 0) {
+          targetId = recent[0].id;
+        }
+      }
+
+      if (!targetId) {
+        return {
+          status: 'erro',
+          mensagem: 'Não foi possível encontrar a transação para atualizar. Por favor, forneça o nome ou valor exato da despesa.'
+        };
+      }
+
       const updates = {};
       if (args.descricao) updates.descricao = args.descricao;
       if (args.valor) updates.valor = parseFloat(args.valor);
       if (args.metodo_pagamento) updates.metodo_pagamento = args.metodo_pagamento;
       if (args.tipo_transacao) updates.tipo_transacao = args.tipo_transacao;
+
       if (args.categoria_nome) {
         const cat = await supabaseService.findCategoryByName(args.categoria_nome);
         if (cat) updates.categoria_id = cat.id;
       }
 
-      const res = await supabaseService.updateTransaction(args.transacao_id, updates);
+      if (args.cartao_nome || args.metodo_pagamento === 'cartao_credito') {
+        const card = await supabaseService.findCreditCardByName(userId, args.cartao_nome || '');
+        if (card) {
+          updates.cartao_id = card.id;
+          updates.metodo_pagamento = 'cartao_credito';
+        }
+      }
+
+      const res = await supabaseService.updateTransaction(targetId, updates);
       return {
         status: 'sucesso',
-        mensagem: 'Transação atualizada com sucesso.',
+        mensagem: 'Transação atualizada com sucesso no banco de dados.',
         transacao: res
       };
     }

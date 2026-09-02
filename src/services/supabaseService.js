@@ -1000,18 +1000,23 @@ class SupabaseService {
     if (updates.metodo_pagamento) dataToUpdate.metodoPagamento = updates.metodo_pagamento;
     if (updates.tipo_transacao) dataToUpdate.tipoTransacao = updates.tipo_transacao;
     if (updates.categoria_id) dataToUpdate.categoriaId = updates.categoria_id;
+    if (updates.cartao_id !== undefined) dataToUpdate.cartaoId = updates.cartao_id;
+    if (updates.mes_fatura !== undefined) dataToUpdate.mesFatura = updates.mes_fatura;
 
     try {
       if (process.env.DATABASE_URL) {
         const res = await prisma.transacao.update({
           where: { id },
           data: dataToUpdate,
-          include: { categoria: true }
+          include: { categoria: true, cartao: true }
         });
         return {
           ...res,
           usuario_id: res.usuarioId,
           categoria_id: res.categoriaId,
+          cartao_id: res.cartaoId,
+          cartao_nome: res.cartao ? res.cartao.nome : undefined,
+          mes_fatura: res.mesFatura,
           tipo_transacao: res.tipoTransacao,
           metodo_pagamento: res.metodoPagamento,
           valor: parseFloat(res.valor.toString())
@@ -1021,7 +1026,7 @@ class SupabaseService {
       console.warn('Prisma error:', err.message);
     }
 
-    const { data, error } = await supabase.from('transacoes').update(updates).eq('id', id).select().single();
+    const { data, error } = await supabase.from('transacoes').update(updates).eq('id', id).select('*, categoria:categorias(id, nome, tipo), cartao:cartoes_credito(id, nome)').single();
     if (error) throw error;
     return data;
   }
