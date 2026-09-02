@@ -37,3 +37,5 @@ test-*.js
 check-*.js
 
 agent.md
+
+.regent
